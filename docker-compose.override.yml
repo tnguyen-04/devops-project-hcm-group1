@@ -1,0 +1,28 @@
+# Dev: mount code vào container → sửa code có hiệu lực ngay, không cần build lại
+# File này được Docker Compose TỰ ĐỌC khi chạy "docker compose up"
+# Backend dùng nodemon → sửa server.js là tự restart
+
+services:
+  backend:
+    user: root
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev"
+    environment:
+      NODE_ENV: development
+
+  frontend:
+    user: root
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: sh -c "npm install && npx react-scripts start"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - HOST=0.0.0.0
+
+volumes:
+  backend_node_modules:
+  frontend_node_modules:
