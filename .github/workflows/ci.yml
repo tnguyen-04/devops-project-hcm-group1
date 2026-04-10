@@ -43,6 +43,55 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Initialize test database schema
+        working-directory: backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: app_test
+        run: |
+          node <<'NODE'
+          const { Pool } = require('pg');
+
+          const pool = new Pool({
+            host: process.env.DB_HOST,
+            port: Number(process.env.DB_PORT),
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME
+          });
+
+          const createSql = `
+            CREATE TABLE IF NOT EXISTS todos (
+              id SERIAL PRIMARY KEY,
+              title VARCHAR(255) NOT NULL,
+              completed BOOLEAN DEFAULT false,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+          `;
+
+          (async () => {
+            for (let i = 1; i <= 20; i++) {
+              try {
+                await pool.query(createSql);
+                console.log('Database schema is ready');
+                await pool.end();
+                return;
+              } catch (err) {
+                if (i === 20) throw err;
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            }
+          })()
+            .catch(async (err) => {
+              console.error('Failed to initialize DB schema:', err.message);
+              await pool.end();
+              process.exit(1);
+            });
+          NODE
+
       - name: Run backend tests
         working-directory: backend
         env:
