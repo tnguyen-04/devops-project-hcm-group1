@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -43,6 +46,55 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Initialize test database schema
+        working-directory: backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: app_test
+        run: |
+          node <<'NODE'
+          const { Pool } = require('pg');
+
+          const pool = new Pool({
+            host: process.env.DB_HOST,
+            port: Number(process.env.DB_PORT),
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME
+          });
+
+          const createSql = `
+            CREATE TABLE IF NOT EXISTS todos (
+              id SERIAL PRIMARY KEY,
+              title VARCHAR(255) NOT NULL,
+              completed BOOLEAN DEFAULT false,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+          `;
+
+          (async () => {
+            for (let i = 1; i <= 20; i++) {
+              try {
+                await pool.query(createSql);
+                console.log('Database schema is ready');
+                await pool.end();
+                return;
+              } catch (err) {
+                if (i === 20) throw err;
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            }
+          })()
+            .catch(async (err) => {
+              console.error('Failed to initialize DB schema:', err.message);
+              await pool.end();
+              process.exit(1);
+            });
+          NODE
+
       - name: Run backend tests
         working-directory: backend
         env:
@@ -70,3 +122,21 @@ jobs:
 
       - name: Push backend Docker image
         run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/devops-group1-backend:latest
+
+  deploy:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/devops-project-hcm-group1
+            git pull origin main
+            docker-compose pull
+            docker-compose up -d
