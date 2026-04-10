@@ -6,7 +6,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   backend:
     build: ./backend
@@ -20,9 +21,10 @@ services:
       DB_USER: myuser
       DB_PASSWORD: mypass
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,6 +41,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/database.sql:/docker-entrypoint-initdb.d/database.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d tododb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
