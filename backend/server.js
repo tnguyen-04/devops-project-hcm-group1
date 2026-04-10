@@ -1,3 +1,4 @@
+require('dotenv').config(); 
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
@@ -8,62 +9,101 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// BUG #1: Wrong default password - doesn't match docker-compose!
 const pool = new Pool({
-   user: process.env.DB_USER || 'postgres',
-   host: process.env.DB_HOST || 'localhost',
-   database: process.env.DB_NAME || 'tododb',
-   password: process.env.DB_PASSWORD || 'wrongpassword',
-   port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER || 'myuser',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'tododb',
+  password: process.env.DB_PASSWORD || 'mypass',
+  port: process.env.DB_PORT || 5432,
 });
 
+// Health check
 app.get('/health', (req, res) => {
-   res.json({ status: 'healthy', version: '1.0.0' });
+  res.json({ status: 'healthy', version: '1.0.0' });
 });
 
-// GET todos
+// GET all todos
 app.get('/api/todos', async (req, res) => {
-   try {
-      const result = await pool.query('SELECT * FROM todos ORDER BY id');
-      res.json(result.rows);
-   } catch (err) {
-      res.status(500).json({ error: err.message });
-   }
+  try {
+    const result = await pool.query('SELECT * FROM todos ORDER BY id');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// BUG #2: Missing validation - will cause test to fail!
-// STUDENT TODO: Add validation to reject empty title
+// CREATE todo
 app.post('/api/todos', async (req, res) => {
-   try {
-      const { title, completed = false } = req.body;
+  const { title } = req.body;
 
-      // STUDENT FIX: Add validation here!
-      // Hint: Check if title is empty or undefined
-      // Return 400 status with error message if invalid
+  // ✅ FIX: validate title
+  if (!title || title.trim() === '') {
+    return res.status(400).json({ error: 'Title is required' });
+  }
 
-      const result = await pool.query(
-         'INSERT INTO todos(title, completed) VALUES($1, $2) RETURNING *',
-         [title, completed]
-      );
-      res.status(201).json(result.rows[0]);
-   } catch (err) {
-      res.status(500).json({ error: err.message });
-   }
+  try {
+    const result = await pool.query(
+      'INSERT INTO todos (title) VALUES ($1) RETURNING *',
+      [title]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// BUG #3: Missing DELETE endpoint - but test expects it!
-// STUDENT TODO: Implement DELETE /api/todos/:id endpoint
+// ✅ PUT update todo
+app.put('/api/todos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title, completed } = req.body;
 
-// BUG #4: Missing PUT endpoint for updating todos
-// STUDENT TODO: Implement PUT /api/todos/:id endpoint
+  if (!title || title.trim() === '') {
+    return res.status(400).json({ error: 'Title is required' });
+  }
 
-const port = process.env.PORT || 8080;
+  try {
+    const result = await pool.query(
+      'UPDATE todos SET title=$1, completed=$2 WHERE id=$3 RETURNING *',
+      [title, completed === true, id] // 🔥 FIX CHỖ NÀY
+    );
 
-// BUG #5: Server starts even in test mode, causing port conflicts
-// STUDENT FIX: Only start server if NOT in test mode
-app.listen(port, () => {
-   console.log(`Backend running on port ${port}`);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Todo not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('UPDATE ERROR:', err); // 👈 in lỗi ra
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// BUG #6: App not exported - tests can't import it!
-// STUDENT FIX: Export the app module
+// ✅ DELETE todo
+app.delete('/api/todos/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM todos WHERE id=$1 RETURNING *',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Todo not found' });
+    }
+
+    res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ FIX: chỉ start server khi không phải test
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(8080, () => {
+    console.log('Server running on port 8080');
+  });
+}
+
+// ✅ FIX: export cho test
+module.exports = { app, pool };
