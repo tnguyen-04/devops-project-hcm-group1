@@ -9,12 +9,14 @@ app.use(cors())
 app.use(express.json())
 
 // BUG #1: Wrong default password - doesn't match docker-compose!
+const parsedDbPort = Number.parseInt(process.env.DB_PORT, 10)
+
 const pool = new Pool({
   user: process.env.DB_USER || 'postgres',
   host: process.env.DB_HOST || 'localhost',
   database: process.env.DB_NAME || 'mydb',
   password: process.env.DB_PASSWORD || 'postgres',
-  port: process.env.DB_PORT || 5432
+  port: Number.isFinite(parsedDbPort) ? parsedDbPort : 5432
 })
 
 // Root: API info (frontend chạy ở port 3000)
